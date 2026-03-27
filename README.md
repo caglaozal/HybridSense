@@ -1,171 +1,140 @@
-  HybridSense
-A Hybrid AI Framework for Energy Optimization and Occupant Comfort
+HybridSense – March Progress
 1. Overview
 HybridSense is an AI-assisted supervisory HVAC control framework that operates transparently on top of an existing Building Management System (BMS). It predicts short-term room occupancy using supervised machine learning and uses those predictions to issue adaptive, energy-aware HVAC setpoints, without modifying any low-level HVAC controller or physical infrastructure.
-The system was trained on anonymized sensor data from a hospital facility and validated in a Siemens Desigo CC demo room environment, communicating via BACnet/IP and Modbus TCP.
+Training data was collected from Siemens Desigo CC at Bilkent Hospital (87-day dataset, Nov 2025-Jan 2026). WP4 validation is scheduled for April 2026 in the Siemens Smart Infrastructure demo room, communicating via BACnet/IP and Modbus TCP.
  
-  Motivation
-
+2. Motivation
 Traditional HVAC systems rely on static schedules and rule-based logic. They cannot adapt to time-varying occupancy, leading to:
-•	Unnecessary energy consumption during unoccupied periods
-•	Comfort degradation during high-occupancy periods that were not anticipated
-•	Zero real-time adaptability in shared or irregular-use spaces
+–	Unnecessary energy consumption during unoccupied periods (20–30% of HVAC budget in a typical commercial building)
+–	Comfort degradation during high-occupancy periods not anticipated by the static schedule
+–	Zero real-time adaptability in shared or irregular-use spaces
 
-Academic literature has proposed model predictive control and reinforcement learning approaches, but most of these require complete overhaul of low-level control logic, which is not feasible in operational industrial BMS environments.
+Academic literature has proposed model predictive control and reinforcement learning approaches, but most require complete overhaul of low-level control logic, not feasible in operational industrial BMS environments.
 HybridSense targets the supervisory layer: it reads from the BMS, predicts, decides, and writes setpoints back without touching any field-level device.
+3. System Architecture
+3.1  Four-Layer Control Hierarchy
+HybridSense is positioned at Layer 4 (supervisor) of the standard industrial BAS hierarchy:
+Layer	Component	HybridSense Role
+4	AI Supervisor-HybridSense	Active. Occupancy prediction, PMV check, setpoint decision, 15-min loop
+3	BMS-Siemens Desigo CC	Receives setpoint commands · Validates against hardcoded safety limits (20–26°C)
+2	DDC Controllers (PXC/DXR)	Not modified. PID loops and BACnet/IP network completely unchanged
+1	Field & Actuators	Not modified. VAV boxes, valves, fan drives, T/H/P sensors
  
-  System Architecture
+3.2  Closed-Loop Control Flow (15-minute cycle)
+Each cycle executes five steps sequentially:
+–	Step 1: READ: BAC0 reads return_temp_C, supply_humidity_pct, return_dp_Pa from BACnet Analog Input objects on PXC/DXR controller
+–	Step 2: COMPUTE: Five physical features derived from raw signals
+–	Step 3: PREDICT: Random Forest classifier outputs Occupied (1) or Empty (0)
+–	Step 4: PMV CHECK: ISO 7730 thermal comfort index calculated; if setback would violate PMV ≤ −0.5, action is blocked regardless of prediction
+–	Step 5: WRITE: Setpoint written to Desigo CC via BACnet Write Property; decision logged to SQLite
  
-The closed-loop sequence:
-•	Data acquisition from BMS sensors
-•	Occupancy prediction via ML classifier
-•	Supervisory setpoint generation
-•	HVAC actuation through Desigo CC
-•	PMV comfort evaluation on live measurements
-•	Feedback-driven re-prediction at each cycle
- 
-  Key Components
 
+3.3  Fail-Safe Design
+–	Setpoint hardcoded limits: 20–26°C. Out-of-range write attempts rejected at controller level.
+–	BACnet connection loss: PXC/DXR retains last known setpoint; system reverts to local BMS control automatically.
+–	Write authorization: BACnet access control restricts write permission to the AI module account only.
+–	Audit log: Every cycle records timestamp, occupancy prediction, PMV value, applied setpoint, and communication status.
+4. Key Components
 Component	Description	Technology
-Occupancy Predictor	Binary classification from BMS sensor features	scikit-learn / XGBoost / LightGBM
-Supervisory Controller	Translates occupancy state to HVAC setpoint commands	Python rule engine
-PMV Calculator	Real-time thermal comfort index computation	ISO 7730 / ASHRAE 55
-BMS Connector	Protocol-level read/write interface to Desigo CC	BAC0 (BACnet/IP), pymodbus
-Data Preprocessor	Cleaning, normalization, feature engineering pipeline	pandas / numpy
-Logging & Monitoring	Trend logging for energy proxy and comfort assessment	CSV / time-series store
+Occupancy Predictor	Binary classification from 5 physical BMS sensor features	scikit-learn (Random Forest, Logistic Regression)
+Supervisory Controller	Translates occupancy state + PMV check to HVAC setpoint command	Python rule engine
+PMV Calculator	Real-time ISO 7730 thermal comfort index - 
+ independent of model training	pythermalcomfort (ISO 7730)
+BMS Connector	Protocol-level read/write interface to Siemens Desigo CC	BAC0 (BACnet/IP), pymodbus
+Data Preprocessor	Cleaning, normalization, feature engineering pipeline	pandas, numpy
+Logging & Monitoring	Audit trail for every decision cycle	SQLite, CSV
+5. Data Pipeline
+5.1  Training Data Source
+Training data was collected from the Siemens Desigo CC system at Hospital controlled, 24/7 BMS environment with continuous HVAC operation.
+Property	Value
+Coverage period	November 1, 2025 → January 27, 2026 (87 days)
+Total records	8,353 rows (8,182 after removing 171 ambiguous transition labels)
+Sampling interval	15 minutes
+Label distribution	Occupied (+1): 5,727 (68.6%)  ·  Empty (−1): 2,455 (29.4%)  ·  Ambiguous (0): 171 (2.0%)
+Final feature set	5 physical signals 
 
- Data Pipeline
+Feature	Signal	Physical Justification
+return_temp_C	Return air temperature	Human metabolic heat (70–90 W/person) raises ambient temperature. Return air reflects zone temperature accurately.
+supply_humidity_pct	Supply air humidity	Occupants exhale ~17 mg water vapour per breath. Elevated humidity is a reliable proxy for presence.
+humidity_diff	Supply/return humidity difference	In occupied spaces, return humidity exceeds supply humidity. Captures arrival/departure transitions.
+temp_roc	Temperature rate of change (°C/15 min)	Rapid temperature rise signals occupancy onset. Decay pattern differs between occupied and empty periods.
+return_dp_Pa	Return duct differential pressure	Occupancy-driven ventilation demand changes duct pressure. Return-side is independent of supply control decisions.
 
-Training data was sourced from a hospital facility BMS. The raw signal set captures HVAC supply/return behavior and environmental conditions across 8,350 timesteps.
-5.1 Feature Philosophy
-A deliberate design decision was made to exclude domain-specific HVAC control signals (supply temperature, supply airflow, delta-T variants) from the final model. These signals directly encode the control state of a bimodal hospital OR system and would fail to generalize to the continuously-modulated office HVAC in the Siemens demo room.
-
-Retained Features - Physically Transferable Across Domains
-TRANSFERABLE_FEATURES = [
-    # Return-side thermal signals (passive, not control-driven)
-    'return_temp_C',
-    'return_dp_Pa',
- 
-    # Humidity (environment response, not setpoint-driven)
-    'supply_humidity_pct',
-    'humidity_diff',
- 
-    # Rate-of-change (dynamics, not absolute level)
-    'temp_roc',
- 
-    # Temporal context
-    'hour_sin', 'hour_cos',   # Continuous encoding of time-of-day
-    'is_workday',
-    'is_workhour',
-]
- 
-Excluded Features - Leakage / Domain-Specific
-EXCLUDED_FEATURES = [
-    'supply_temp_C',            # HVAC setpoint proxy - bimodal in OR, continuous in office
-    'supply_airflow_m3h',        # Directly encodes occupancy-driven control state
-    'delta_T_abs', 'delta_T',    # Derived from supply temp --> label leakage
-    'supply_dp_*',              # Supply-side pressure - HVAC mode indicator
-    'af_mean_*', 'af_lag_*',    # Rolling/lagged airflow --> same leakage chain
-]
-
-The original feature set yielded AUC ≈ 0.998, a near-perfect score that is a red flag, not a success. The occupancy_label was constructed from HVAC signal thresholds (supply airflow ~1,200 m³/h standby vs ~1,950 m³/h active), meaning features and labels were derived from the same source (structural label leakage). The revised transferable feature set yields AUC ≈ 0.65–0.78, which is honest, defensible, and generalizes to the Siemens demo room.
+5.3  Train/Test Split Strategy
+Chronological 80/20 split was used NOT random shuffle. In time-series forecasting, random shuffle allows the model to see both past and future context during training, producing unrealistically optimistic performance estimates. Chronological split mirrors actual deployment: the model predicts future occupancy using only historical data.
+Train: 6,545 records (Nov 1, 2025 → Jan 8, 2026)  ·  Test: 1,637 records (Jan 8–27, 2026)
 6. Occupancy Prediction Model
-6.1 Problem Definition
+6.1  Problem Definition
 Binary classification task:
-•	1 → Room is occupied (HVAC should operate in comfort mode)
-•	0 → Room is unoccupied (HVAC can reduce to standby/setback mode)
-6.2 Model Selection
+–	Class 1 (Occupied): HVAC should operate in comfort mode (setpoint 22°C)
+–	Class 0 (Unoccupied): HVAC can reduce to setback mode (setpoint 24°C, 2°C reduction)
+–	Ambiguous class (0): 171 transition-period records excluded from training
 
-  Model	Notes
+6.2  Final Model Selection -  Random Forest and Logistic Regression
+Two algorithms were evaluated. Model complexity was deliberately constrained, the project prioritises robustness and interpretability over accuracy maximisation, consistent with industrial BMS deployment where black-box decisions are not acceptable.
+Model	Notes
+Random Forest	Handles non-linearity; feature importance available for interpretability; no scaling required; robust to outliers. Selected for deployment, lowest False Negative count at default threshold.
+Logistic Regression	Interpretable baseline with explicit coefficients; class_weight='balanced' used; scaling required. Higher AUC but more False Negatives at default threshold, less suitable for comfort-critical deployment.
 
-Logistic Regression	Interpretable baseline
-Random Forest	Handles non-linearity, feature importance available
-Gradient Boosting (XGBoost / LightGBM)	Best AUC on transferable feature set
-Decision Tree	Fully interpretable, jury-presentable
-
-Model complexity is deliberately constrained. The project prioritizes robustness and interpretability over accuracy maximization, consistent with deployment in an industrial BMS where black-box decisions are not acceptable.
-Evaluation Metrics
-
-•	AUC-ROC: primary metric (threshold-independent)
-•	F1-Score: balance between precision and recall on imbalanced occupancy windows
-•	Confusion matrix at operating threshold (false negatives are tolerable - false positives cause unnecessary HVAC activation)
+6.3  Evaluation Metrics
+–	AUC-ROC: primary metric, threshold-independent discriminative power (computed via roc_analysis.py with n_estimators=300)
+–	F1-Score, Precision, Recall, Specificity: evaluated at default threshold (0.5) using deployed pkl models
+–	Confusion matrix at default threshold (0.5): reflects actual deployment behaviour
  
-  Supervisory Control Logic
+6.4  Model Performance Results
+Metric	Random Forest	Logistic Regression	Notes
+AUC-ROC	0.832	0.874	From roc_analysis.py; n_estimators=300
+F1-Score	0.786	0.660	At default threshold (0.5); deployed pkl
+Precision	0.843	0.913	RF fewer false positives at default threshold
+Recall	0.736	0.517	RF catches more occupied periods
+Accuracy	72.5%	63.5%	At default threshold
+Specificity	0.701	0.893	LR more conservative at default threshold
+False Negatives	296	542	RF: 46% fewer comfort violations
+False Positives	154	55	LR fewer unnecessary HVAC activations
+TN / TP	361 / 826	460 / 580	Confusion matrix at threshold=0.5
 
-The supervisory controller translates the binary occupancy prediction into actionable BMS setpoints:
+7. Thermal Comfort Evaluation (PMV)
+PMV (Predicted Mean Vote) is computed per ISO 7730:2005 using the pythermalcomfort library. The comfort zone is −0.5 ≤ PMV ≤ +0.5 (ISO 7730 Category B, applicable to offices and hospitals). PPD target: <10%.
+PMV is architecturally independent from the occupancy prediction model. It shares two input signals (return_temp_C, supply_humidity_pct) but is processed separately and has NO influence on model training.
+Parameter	Source	Justification
+Air temperature (T_air)	BMS sensor - return_temp_C	Real-time zone temperature
+Relative humidity (RH)	BMS sensor- supply_humidity_pct	Real-time humidity data
+Radiant temperature (T_r)	Fixed: T_r = T_air	No dedicated radiant sensor; ISO 7730 assumption
+Air velocity (v_air)	Fixed: 0.1 m/s	Typical sedentary indoor office environment
+Metabolic rate (M)	Fixed: 1.2 met	Seated office work (ISO 7730 Table B.1)
+Clothing insulation (I_cl)	Fixed: 1.0 clo (winter)	Standard office winter clothing
 
-Occupancy = 1 (Occupied)
-  --> Temperature setpoint : COMFORT range (e.g., 21-23 C)
-  --> Airflow              : NOMINAL operating level
-  --> Humidity control     : ACTIVE
+8.1  PMV Scenario Analysis Results
+Scenario	Mean PMV	PPD	In-comfort %	Occ. Risk (slots)	Energy (proxy)
+Baseline (static BMS)	+0.348	8.0%	87.5%	0	—
+1°C Setback	+0.294	7.3%	90.8%	0	−6.6%
+2°C Setback ★ OPTIMAL	+0.241	7.1%	90.8%	0	−16.7%
+3°C Setback	+0.189	7.3%	90.7%	11	−25.1%
+9. Demo Room Deployment (WP4)
+9.1  Hardware Inventory
+Component	Model	WP4 Role
+Building Management System	Desigo CC	Main interface. Sensor simulation + setpoint verification
+Integration Controller	PXC00.ED	BACnet/IP gateway. HybridSense communicates via this card
+Main Controller	PXC7.E400L	Setpoint commands written here
+I/O Controller	PXC4.E16	Additional sensor read access
+Room Controllers	DXR2 series (6 types)	Direct setpoint recipients
+Room Thermostats	RDG200KN, RDG100, QMX3.P37	Real T/H readings via KNX → Desigo CC → BACnet
+I/O Modules	TXM1 series (13 modules)	Read/write BACnet data points
+
+9.2  Test Scenarios
+ID	return_temp_C	supply_hum %	Expected Prediction	Expected PMV	Expected Decision
+S1	23.5°C	52%	Occupied (1)	0.30–0.45	No setback
+S2	20.8°C	48%	Empty (0)	0.10–0.25	2°C setback applied
+S3 ★	18.5°C	45%	Empty (0)	−0.45 to −0.50	PMV constraint → setback CANCELLED
+S4	26.0°C	68%	Occupied (1)	0.50–0.65	No setback
+S5	22.0°C	50%	Threshold ~0.50	0.20–0.35	Threshold-dependent, logged
+
+ S3 is the critical PMV safety constraint test: the system must cancel setback when the thermal comfort boundary is approached, regardless of the occupancy prediction.
+10. Work Package Progress
+WP	Period	Deliverable	Status
+WP1	Nov–Dec 2025	Data collection, ETL pipeline, BACnet point mapping	✓ Complete
+WP2	Dec 2025–Jan 2026	System architecture, algorithm selection, PMV methodology	✓ Complete
+WP3	Feb–Mar 2026	Python pipeline, PMV module, Streamlit dashboard, model evaluation	✓ Complete
+WP4	April 2026	Siemens demo room integration, closed-loop BACnet/IP validation, final report	In Progress
+11. Repository Structure
  
-Occupancy = 0 (Unoccupied)
-  --> Temperature setpoint : SETBACK range (e.g., 18 C / 26 C)
-  --> Airflow              : MINIMUM ventilation
-  --> Humidity control     : PASSIVE
- 
-PMV check on both paths:
-  --> If PMV exceeds [-0.5, +0.5] during occupied period
-      --> override toward comfort
-
-All setpoint commands remain within predefined safety margins. The controller never modifies low-level PID parameters or controller firmware only supervisory-layer variables exposed through the BMS interface.
-
- Thermal Comfort Evaluation (PMV)
-
-PMV (Predicted Mean Vote) is computed per ISO 7730 and ASHRAE Standard 55:
-
-PMV = f(T_air, T_radiant, v_air, RH, M, I_cl)
- 
-Comfort zone:  -0.5 <= PMV <= +0.5
-
-Parameter	Source
-Air temperature (T_air)	BMS sensor (real-time)
-Relative humidity (RH)	BMS sensor (real-time)
-Mean radiant temperature	Fixed assumption ≈ T_air (documented)
-Air velocity	Fixed assumption: 0.1 m/s (sedentary indoor)
-Metabolic rate	Fixed: 1.2 met (seated office work)
-Clothing insulation	Fixed: 1.0 clo (winter) / 0.5 clo (summer)
-
-PMV is computed at the same temporal resolution as occupancy prediction and energy proxy logging. It is used as a comparative indicator between baseline static control and HybridSense predictive control.
- 
-BMS Integration: BACnet/IP + Modbus TCP
-
-  [HybridSense Python Process]
-          |
-          +-- BACnet/IP (primary)
-          |     +-- BAC0 library
-          |           +-- Read : sensor present values
-          |           +-- Write: supervisory setpoint objects
-          |
-          +-- Modbus TCP (secondary / fallback)
-                +-- pymodbus
-                      +-- Read : holding registers (sensor data)
-                      +-- Write: holding registers (setpoints)
- 
-  Connection: Laptop --[Ethernet]--> Siemens Controller Card
-  No intermediate hardware.
-
-The system operates entirely within the local BMS network. No cloud connectivity. No modifications to internal controller configurations.
-
-  Demo Room Deployment (WP4)
-
-The Siemens demo room contains:
-•	Siemens Desigo CC workstation with BMS access
-•	PXC/DXR HVAC controllers (read/write via supervisory interface only)
-•	Temperature, humidity, and CO₂ sensors connected to BMS
-•	No dedicated sub-metering → energy performance assessed via operational proxy indicators
-
-  Operational Proxies for Energy Comparison
-•	HVAC operating duration (baseline vs. predictive mode)
-•	Supervisory setpoint adjustment frequency and magnitude
-•	Actuator command levels (fan duty, valve position integrals)
-•	System runtime characteristics from BMS trend logs
-
-Work Package Progress
-
-  Work Package	Period	Status
-WP1 – Requirement Analysis	Nov–Dec 2025	Complete
-WP2 – System & Algorithm Design	Dec 2025 – Jan 2026	Complete
-WP3 – Implementation & Integration	Feb 2026	Complete
-WP4 – Test & Verification	Mar–Apr 2026	In Progress
-
