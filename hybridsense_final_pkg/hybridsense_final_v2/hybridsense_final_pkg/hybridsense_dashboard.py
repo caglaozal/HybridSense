@@ -14,18 +14,16 @@ from sklearn.metrics import confusion_matrix, f1_score, accuracy_score, roc_auc_
 
 st.set_page_config(
     page_title="HybridSense",
-    page_icon="🏢",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# css
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 .stApp { background: #0D1117; color: #E6EDF3; }
-#MainMenu, footer, header { visibility: hidden; }
 .stTabs [data-baseweb="tab-list"] {
     background: #161B22; border-radius: 8px; gap: 4px;
     padding: 4px; border: 1px solid #30363D;
@@ -160,7 +158,7 @@ def compute_metrics():
     return {
         "models": [
             {"name": "Logistic Regression", "auc": auc_lr, "f1": f1_lr, "acc": acc_lr},
-            {"name": "Random Forest ★",     "auc": auc_rf, "f1": f1_rf, "acc": acc_rf},
+            {"name": "Random Forest ",     "auc": auc_rf, "f1": f1_rf, "acc": acc_rf},
         ],
         "cm": cm_rf,
         "fi": fi_out,
@@ -191,7 +189,7 @@ ENERGY = [
 PMV_DATA = [
     {"name": "Surgeon",        "pmv":  0.767, "ppd": 17.8, "comfort":  5.8, "met": 2.5, "status": "wrong"},
     {"name": "Nurse/Tech",     "pmv": -0.018, "ppd":  5.6, "comfort": 99.0, "met": 1.6, "status": "ok"},
-    {"name": "Average ★",      "pmv":  0.348, "ppd":  8.0, "comfort": 87.5, "met": 2.0, "status": "selected"},
+    {"name": "Average ",      "pmv":  0.348, "ppd":  8.0, "comfort": 87.5, "met": 2.0, "status": "selected"},
     {"name": "Office (wrong)", "pmv": -0.067, "ppd":  5.7, "comfort": 98.1, "met": 1.2, "status": "wrong"},
 ]
 
@@ -213,13 +211,13 @@ DAILY = pd.DataFrame({
 hdr_left, hdr_right = st.columns([3, 1])
 
 with hdr_left:
-    st.markdown("# 🏢 HybridSense")
+    st.markdown("#  HybridSense")
     st.caption("A Hybrid AI Framework for Energy Optimization and Occupant Comfort · FENS 401-402")
     st.markdown(
-        "🤖 `Occupancy Prediction` &nbsp; "
-        "⚡ `Supervisory HVAC Control` &nbsp; "
-        "🌡️ `PMV Thermal Comfort` &nbsp; "
-        "🏗️ `Siemens Desigo CC · BACnet/IP`"
+        " `Occupancy Prediction` &nbsp; "
+        " `Supervisory HVAC Control` &nbsp; "
+        " `PMV Thermal Comfort` &nbsp; "
+        " `Siemens Desigo CC · BACnet/IP`"
     )
 
 with hdr_right:
@@ -249,15 +247,13 @@ for col, (val, lbl, color) in zip([k1,k2,k3,k4,k5,k6], kpis):
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# tabs
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📊  Model Results",
-    "⚡  Energy Analysis",
-    "🌡️  Thermal Comfort",
-    "🔴  Live Simulation"
+    "  Model Results",
+    "  Energy Analysis",
+    "  Thermal Comfort",
+    "  Live Simulation"
 ])
 
-# TAB 1 —MODEL
 with tab1:
     st.markdown('<div class="section-hdr">Model Performance Comparison</div>', unsafe_allow_html=True)
     rows_html = ""
@@ -376,7 +372,6 @@ with tab1:
     )
     st.plotly_chart(fig_hr, use_container_width=True)
 
-#TAB2-ENERGY
 with tab2:
     st.markdown('<div class="section-hdr">Physics-Based Energy Proxy Model</div>', unsafe_allow_html=True)
     st.markdown("""
@@ -393,7 +388,7 @@ with tab2:
     for col, s in zip([e1, e2, e3, e4], ENERGY):
         border = "#3FB950" if s["opt"] else "#30363D"
         bg     = "rgba(63,185,80,0.06)" if s["opt"] else "#161B22"
-        opt_badge = '<br><span style="background:#3FB95022;color:#3FB950;border:1px solid #3FB95044;border-radius:20px;padding:2px 8px;font-size:11px;">✓ OPTIMAL</span>' if s["opt"] else ""
+        opt_badge = '<br><span style="background:#3FB95022;color:#3FB950;border:1px solid #3FB95044;border-radius:20px;padding:2px 8px;font-size:11px;"> OPTIMAL</span>' if s["opt"] else ""
         savings_html = f'<div style="font-size:20px;font-weight:700;color:#3FB950;">−{s["pct"]}%</div><div style="font-size:11px;color:#8B949E;">{s["monthly"]} kWh/month saved</div>' if s["pct"] > 0 else '<div style="font-size:12px;color:#484F58;margin-top:6px;">Reference</div>'
         col.markdown(f"""
         <div style="background:{bg};border:1px solid {border};border-radius:10px;
@@ -472,13 +467,13 @@ with tab3:
         for p in PMV_DATA:
             in_band = abs(p["pmv"]) <= 0.5
             if p["status"] == "selected":
-                border, bg, badge = "#3FB950", "rgba(63,185,80,0.06)", "✓ SELECTED"
+                border, bg, badge = "#3FB950", "rgba(63,185,80,0.06)", " SELECTED"
                 badge_col = "#3FB950"
             elif p["status"] == "wrong":
-                border, bg, badge = "#F85149", "rgba(248,81,73,0.06)", "✗ INCORRECT"
+                border, bg, badge = "#F85149", "rgba(248,81,73,0.06)", " INCORRECT"
                 badge_col = "#F85149"
             else:
-                border, bg, badge = "#30363D", "#161B22", "✓ OK"
+                border, bg, badge = "#30363D", "#161B22", " OK"
                 badge_col = "#3FB950"
             pmv_col = "#D29922" if abs(p["pmv"]) <= 0.5 else "#F85149"
             pmv_str = f"+{p['pmv']:.3f}" if p["pmv"] >= 0 else f"{p['pmv']:.3f}"
@@ -561,7 +556,6 @@ with tab3:
             <div class="metric-val" style="color:{col_color};font-size:22px;">{val}</div>
             <div class="metric-lbl">{lbl}</div>
         </div>""", unsafe_allow_html=True)
-# TAB4-LIVESUM
 with tab4:
     st.markdown("""
     <div class="info-box">
@@ -577,7 +571,7 @@ with tab4:
     with ctrl1:
         speed = st.selectbox("Speed", ["Slow (1×)", "Normal (5×)", "Fast (20×)"], index=1)
     with ctrl2:
-        setback = st.selectbox("Setback Amount", ["1°C", "2°C ★", "3°C"], index=1)
+        setback = st.selectbox("Setback Amount", ["1°C", "2°C ", "3°C"], index=1)
     with ctrl3:
         show_base = st.checkbox("Show Baseline", value=True)
     with ctrl4:
@@ -601,7 +595,7 @@ with tab4:
     np.random.seed(7)
     SIM = []
     BASE_SP = 22.0
-    sb_val  = float(setback.replace("°C","").replace("★","").strip())
+    sb_val  = float(setback.replace("°C","").replace("","").strip())
 
     _sub = _m["sub"]
     FEATURES = _rf.feature_names_in_.tolist()
@@ -655,7 +649,7 @@ with tab4:
             labels.append(row["label"])
 
             e_slot = 1.8 + np.random.rand()*0.5 if row["occ"] else 1.1 + np.random.rand()*0.4
-            e_factor = {"1°C": 0.905, "2°C ★": 0.833, "3°C": 0.778}[setback]
+            e_factor = {"1°C": 0.905, "2°C ": 0.833, "3°C": 0.778}[setback]
             e_cum      += e_slot * (1.0 if row["occ"] else e_factor)
             e_base_cum += e_slot
             sav_pct = (1 - e_cum / max(e_base_cum, 0.01)) * 100
@@ -667,14 +661,14 @@ with tab4:
                 stat_box.markdown("""
                 <div style="background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.3);
                     border-radius:10px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;">🏢</div>
+                    <div style="font-size:28px;"></div>
                     <div style="color:#3FB950;font-size:14px;font-weight:700;">OCCUPIED</div>
                 </div>""", unsafe_allow_html=True)
             else:
                 stat_box.markdown("""
                 <div style="background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
                     border-radius:10px;padding:14px;text-align:center;">
-                    <div style="font-size:28px;">🌙</div>
+                    <div style="font-size:28px;"></div>
                     <div style="color:#58A6FF;font-size:14px;font-weight:700;">VACANT</div>
                 </div>""", unsafe_allow_html=True)
 
@@ -688,7 +682,7 @@ with tab4:
             </div>""", unsafe_allow_html=True)
 
             pmv_col = "#3FB950" if abs(pmv_now) <= 0.5 else "#D29922"
-            pmv_note = "✓ Comfort zone" if abs(pmv_now) <= 0.5 else "⚠ Outside comfort"
+            pmv_note = " Comfort zone" if abs(pmv_now) <= 0.5 else " Outside comfort"
             pmv_box.markdown(f"""
             <div class="metric-box">
                 <div class="metric-val" style="color:{pmv_col};font-size:24px;">{pmv_now:+.2f}</div>
@@ -703,7 +697,6 @@ with tab4:
                 <div style="font-size:10px;color:#8B949E;margin-top:4px;">{e_base_cum-e_cum:.1f} kWh so far</div>
             </div>""", unsafe_allow_html=True)
 
-            # Chart
             if len(temps) > 1:
                 fig_live = go.Figure()
                 fig_live.add_trace(go.Scatter(
@@ -729,12 +722,11 @@ with tab4:
                 )
                 chart_box.plotly_chart(fig_live, use_container_width=True)
 
-            # Log
-            icon = "🏢" if row["occ"] else "🌙"
+            icon = "" if row["occ"] else ""
             action = "Comfort mode" if row["occ"] else f"Setback −{sb_val}°C"
             log_lines = [f"{row['label']} {icon} → {action}"] + log_lines
             log_html = "<br>".join([
-                f'<span style="color:{"#3FB950" if "🏢" in l else "#58A6FF"};font-size:11px;">{l}</span>'
+                f'<span style="color:{"#3FB950" if "" in l else "#58A6FF"};font-size:11px;">{l}</span>'
                 for l in log_lines[:8]
             ])
             log_box.markdown(f"""
@@ -757,7 +749,6 @@ with tab4:
             <div>Press <b style="color:#E6EDF3;">Run Simulation</b> to start the closed-loop demo</div>
         </div>""", unsafe_allow_html=True)
 
-#for footer
 st.divider()
 st.markdown("""
 <div style="text-align:center;color:#484F58;font-size:11px;padding:4px 0 12px;">
