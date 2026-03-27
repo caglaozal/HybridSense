@@ -1,0 +1,3 @@
+Model,AUC,Optimal_Threshold,TPR_at_Optimal_Threshold,FPR_at_Optimal_Threshold,Youden_J
+Random Forest,0.832,0.3725,0.8381,0.2379,0.6003
+Logistic Regression,0.8736,0.5178,0.8288,0.1917,0.6371
